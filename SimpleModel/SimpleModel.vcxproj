@@ -154,7 +154,13 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\common\VulkanBase.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="SimpleModel.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\common\VulkanBase.h" />
+    <ClInclude Include="SimpleModel.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
