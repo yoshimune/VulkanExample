@@ -32,15 +32,23 @@ public:
 		// SDK内にある一般的なvalidation layer
 		"VK_LAYER_KHRONOS_validation"
 	};
-	virtual const std::vector<const char*> getValidationLayers() {
-		return validationLayers;
-	}
+
+	const std::vector<const char*> extensions = {
+		VK_KHR_SURFACE_EXTENSION_NAME,
+		VK_KHR_WIN32_SURFACE_EXTENSION_NAME
+#ifdef _DEBUG
+		, VK_EXT_DEBUG_REPORT_EXTENSION_NAME
+#endif
+	};
 
 	virtual void start();
 
 
 protected:
 	GLFWwindow* window;
+
+	// VKオブジェクト ====================================
+	VkInstance  instance;
 
 	virtual const int windowWidth() { return 960; }
 	virtual const int windowHeight() { return 640; }
@@ -54,5 +62,11 @@ protected:
 	virtual void render();
 
 	// 必要なValidationLayersがサポートされているか?
-	virtual bool checkValidationLayerSupport();
+	bool checkValidationLayerSupport();
+
+	// 必要な拡張がサポートされているか?
+	bool checkExtensionSupport();
+
+	// 結果チェック
+	void checkResult(VkResult result, const char* message);
 };
