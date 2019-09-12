@@ -155,12 +155,14 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\common\VulkanBase.cpp" />
+    <ClCompile Include="..\common\VulkanDebug.cpp" />
     <ClCompile Include="..\common\VulkanTools.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="SimpleModel.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\common\VulkanBase.h" />
+    <ClInclude Include="..\common\VulkanDebug.h" />
     <ClInclude Include="..\common\VulkanTools.h" />
     <ClInclude Include="SimpleModel.h" />
   </ItemGroup>

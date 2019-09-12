@@ -44,3 +44,5 @@ VkFormat VulkanTools::findSupportedFormat(
 
 	throw std::runtime_error("failed to find supported format!");
 }
+
+

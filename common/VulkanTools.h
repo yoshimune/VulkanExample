@@ -7,7 +7,7 @@
 
 namespace VulkanTools
 {
-	// ƒCƒ[ƒWƒrƒ…[ì¬
+	// ã‚¤ãƒ¡ãƒ¼ã‚¸ãƒ“ãƒ¥ãƒ¼ä½œæˆ
 	VkResult createImageView(
 		VkDevice device,
 		VkImage image,
@@ -16,10 +16,12 @@ namespace VulkanTools
 		uint32_t mipLevels,
 		VkImageView* pImageView);
 
-	// ƒTƒ|[ƒg‚³‚ê‚Ä‚¢‚éƒtƒH[ƒ}ƒbƒg‚ðŒŸõ‚·‚é
+	// ã‚µãƒãƒ¼ãƒˆã•ã‚Œã¦ã„ã‚‹ãƒ•ã‚©ãƒ¼ãƒžãƒƒãƒˆã‚’æ¤œç´¢ã™ã‚‹
 	VkFormat findSupportedFormat(
 		VkPhysicalDevice physicalDevice,
 		const std::vector<VkFormat>& candidates,
 		VkImageTiling tiling,
 		VkFormatFeatureFlags features);
+
+
 }

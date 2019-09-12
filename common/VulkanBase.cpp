@@ -22,6 +22,7 @@ void VulkanBase::initialize()
 {
 	initWindow();
 	initInstance();
+	if (enableValidationLayers) { setupDebugMessenger(); }
 	createSurface();
 	selectPhysicalDevice();
 	createLogicalDevice();
@@ -70,6 +71,15 @@ void VulkanBase::initInstance()
 #endif // DEBUG
 
 	VK_CHECK_RESULT(vkCreateInstance(&instaceCreateInfo, nullptr, &instance));
+}
+
+void VulkanBase::setupDebugMessenger()
+{
+	// The report flags determine what type of messages for the layers will be displayed
+		// For validating (debugging) an appplication the error and warning bits should suffice
+	VkDebugReportFlagsEXT debugReportFlags = VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT;
+	// Additional flags include performance info, loader and layer debug messages, etc.
+	VulkanDebug::setupDebugging(instance, debugReportFlags, VK_NULL_HANDLE);
 }
 
 void VulkanBase::createSurface()

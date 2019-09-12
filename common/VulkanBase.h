@@ -2,6 +2,7 @@
 
 #define NOMINMAX	// min/max関数の競合回避
 
+
 #include <memory>
 #include <vector>
 #include <array>
@@ -21,8 +22,9 @@
 #include <vulkan/vk_layer.h>
 #include <vulkan/vulkan.h>
 
-#include "../common/VulkanTools.h"
 
+#include "../common/VulkanTools.h"
+#include "../common/VulkanDebug.h"
 
 #ifdef _DEBUG
 #define TRACE(x) std::cout << x << std::endl;
@@ -121,8 +123,9 @@ protected:
 
 
 	virtual void initialize();
-	void initInstance();
 	void initWindow();
+	void initInstance();
+	void setupDebugMessenger();
 	void createSurface();
 	void selectPhysicalDevice();
 	void createLogicalDevice();
