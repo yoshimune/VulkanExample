@@ -26,6 +26,7 @@ void VulkanBase::initialize()
 	selectPhysicalDevice();
 	createLogicalDevice();
 	createSwapChain();
+	createRenderPass();
 }
 
 void VulkanBase::initWindow()
@@ -152,6 +153,78 @@ void VulkanBase::createLogicalDevice()
 	vkGetDeviceQueue(device, indices.presentFamily.value(), 0, &presentQueue);
 }
 
+void VulkanBase::createRenderPass()
+{
+	std::array<VkAttachmentDescription, 3> attachments;
+	auto& colorTarget = attachments[0];
+	auto& resolveTarget = attachments[1];
+	auto& depthTarget = attachments[2];
+
+	colorTarget.format = swapChainImageFormat;
+	colorTarget.samples = msaaSamples;
+	colorTarget.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	colorTarget.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	colorTarget.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	colorTarget.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	colorTarget.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	colorTarget.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+	resolveTarget.format = swapChainImageFormat;
+	resolveTarget.samples = VK_SAMPLE_COUNT_1_BIT;
+	resolveTarget.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	resolveTarget.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	resolveTarget.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	resolveTarget.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	resolveTarget.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	resolveTarget.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+	depthTarget.format = depthFormat();
+	depthTarget.samples = msaaSamples;
+	depthTarget.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	depthTarget.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	depthTarget.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	depthTarget.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	depthTarget.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	depthTarget.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+	VkAttachmentReference colorAttachmentRef = {};
+	colorAttachmentRef.attachment = 0;
+	colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+	VkAttachmentReference depthAttachmentRef = {};
+	depthAttachmentRef.attachment = 1;
+	depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+	VkAttachmentReference resolveRef = {};
+	resolveRef.attachment = 2;
+	resolveRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+	VkSubpassDescription subpass = {};
+	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	subpass.colorAttachmentCount = 1;
+	subpass.pColorAttachments = &colorAttachmentRef;
+	subpass.pDepthStencilAttachment = &depthAttachmentRef;
+	subpass.pResolveAttachments = &resolveRef;
+
+	VkSubpassDependency dependency = {};
+	dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+	dependency.dstSubpass = 0;
+	dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	dependency.srcAccessMask = 0;
+	dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+	VkRenderPassCreateInfo renderPassInfo = {};
+	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+	renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+	renderPassInfo.pAttachments = attachments.data();
+	renderPassInfo.subpassCount = 1;
+	renderPassInfo.pSubpasses = &subpass;
+	renderPassInfo.dependencyCount = 1;
+	renderPassInfo.pDependencies = &dependency;
+
+	VK_CHECK_RESULT(vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass));
+}
 
 VulkanBase::SwapChainSupportDetails VulkanBase::querySwapChainSupport(VkPhysicalDevice device)
 {
@@ -205,6 +278,22 @@ void VulkanBase::mainLoop()
 void VulkanBase::render()
 {
 
+}
+
+void VulkanBase::cleanup()
+{
+
+}
+
+void VulkanBase::terminate()
+{
+	vkDestroyDevice(device, nullptr);
+
+	vkDestroySurfaceKHR(instance, surface, nullptr);
+	vkDestroyInstance(instance, nullptr);
+
+	glfwDestroyWindow(window);
+	glfwTerminate();
 }
 
 bool VulkanBase::checkValidationLayerSupport()
@@ -410,6 +499,13 @@ void VulkanBase::createSwapChain()
 
 	swapChainImageFormat = surfaceFormat.format;
 	swapChainExtent = extent;
+
+	// イメージビュー作成
+	swapChainImageViews.resize(swapChainImages.size());
+
+	for (size_t i = 0; i < swapChainImages.size(); i++) {
+		VK_CHECK_RESULT(VulkanTools::createImageView(device, swapChainImages[i], swapChainImageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1, &swapChainImageViews[i]));
+	}
 }
 
 VkSurfaceFormatKHR VulkanBase::chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats)
@@ -455,4 +551,14 @@ VkExtent2D VulkanBase::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabili
 
 		return actualExtent;
 	}
+}
+
+VkFormat VulkanBase::findDepthFormat()
+{
+	return VulkanTools::findSupportedFormat(
+		physicalDevice,
+		{ VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT },
+		VK_IMAGE_TILING_OPTIMAL,
+		VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
+	);
 }

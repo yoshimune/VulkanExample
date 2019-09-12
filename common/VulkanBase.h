@@ -19,7 +19,9 @@
 #include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
 #include <vulkan/vk_layer.h>
-#include <vulkan/vulkan_win32.h>
+#include <vulkan/vulkan.h>
+
+#include "../common/VulkanTools.h"
 
 
 #ifdef _DEBUG
@@ -102,11 +104,21 @@ protected:
 	std::vector<VkImageView> swapChainImageViews;
 	VkFormat swapChainImageFormat;
 	VkExtent2D swapChainExtent;
+	VkRenderPass renderPass;
 
+
+	// プロパティ
 	virtual const int windowWidth() { return 960; }
 	virtual const int windowHeight() { return 640; }
-
 	virtual const char* appTitle() { return "VulkanBase"; }
+
+	VkSampleCountFlagBits msaaSamples = VK_SAMPLE_COUNT_1_BIT;
+	std::optional<VkFormat> depthFormat_;
+	VkFormat depthFormat() {
+		if(!depthFormat_.has_value()) { depthFormat_ = findDepthFormat(); }
+		return depthFormat_.value();
+	}
+
 
 	virtual void initialize();
 	void initInstance();
@@ -115,9 +127,14 @@ protected:
 	void selectPhysicalDevice();
 	void createLogicalDevice();
 	void createSwapChain();
+	void createRenderPass();
 
 	virtual void mainLoop();
 	virtual void render();
+	virtual void cleanup();
+
+	void terminate();
+
 
 	// 必要なValidationLayersがサポートされているか?
 	virtual bool checkValidationLayerSupport();
@@ -145,4 +162,7 @@ protected:
 
 	// スワップチェーンの解像度を決定する
 	VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
+
+	// デプスフォーマットを検索する
+	VkFormat findDepthFormat();
 };
