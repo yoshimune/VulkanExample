@@ -28,6 +28,13 @@ void VulkanBase::initialize()
 	createLogicalDevice();
 	createSwapChain();
 	createRenderPass();
+	createCommandPool();
+	createColorBuffer();
+	createDepthBuffer();
+	createFramebuffer();
+	createSyncObjects();
+	createCommandBuffers();
+	prepare();
 }
 
 void VulkanBase::initWindow()
@@ -76,7 +83,7 @@ void VulkanBase::initInstance()
 void VulkanBase::setupDebugMessenger()
 {
 	// The report flags determine what type of messages for the layers will be displayed
-		// For validating (debugging) an appplication the error and warning bits should suffice
+	// For validating (debugging) an appplication the error and warning bits should suffice
 	VkDebugReportFlagsEXT debugReportFlags = VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT;
 	// Additional flags include performance info, loader and layer debug messages, etc.
 	VulkanDebug::setupDebugging(instance, debugReportFlags, VK_NULL_HANDLE);
@@ -163,6 +170,52 @@ void VulkanBase::createLogicalDevice()
 	vkGetDeviceQueue(device, indices.presentFamily.value(), 0, &presentQueue);
 }
 
+void VulkanBase::createColorBuffer()
+{
+	VkFormat colorFormat = swapChainImageFormat;
+
+	VulkanTools::createImage(
+		physicalDevice,
+		device,
+		swapChainExtent.width,
+		swapChainExtent.height,
+		1,
+		msaaSamples,
+		colorFormat,
+		VK_IMAGE_TILING_OPTIMAL,
+		VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+		colorImage,
+		colorImageMemory);
+
+	VulkanTools::createImageView(device, colorImage, colorFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1, &colorImageView);
+
+	transitionImageLayout( colorImage, colorFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 1);
+}
+
+void VulkanBase::createDepthBuffer()
+{
+	VkFormat depthFormat = findDepthFormat();
+
+	VulkanTools::createImage(
+		physicalDevice,
+		device,
+		swapChainExtent.width,
+		swapChainExtent.height,
+		1,
+		msaaSamples,
+		depthFormat,
+		VK_IMAGE_TILING_OPTIMAL,
+		VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+		depthImage,
+		depthImageMemory);
+
+	VulkanTools::createImageView(device, depthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT, 1, &depthImageView);
+
+	transitionImageLayout(depthImage, depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1);
+}
+
 void VulkanBase::createRenderPass()
 {
 	std::array<VkAttachmentDescription, 3> attachments;
@@ -236,6 +289,61 @@ void VulkanBase::createRenderPass()
 	VK_CHECK_RESULT(vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass));
 }
 
+void VulkanBase::createFramebuffer()
+{
+	swapChainFramebuffers.resize(swapChainImageViews.size());
+
+	for (size_t i = 0; i < swapChainImageViews.size(); i++) {
+
+		std::array<VkImageView, 3> attachments = {
+			colorImageView,
+			depthImageView,
+			swapChainImageViews[i]
+		};
+
+		VkFramebufferCreateInfo framebufferinfo = {};
+		framebufferinfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+		framebufferinfo.renderPass = renderPass;
+		framebufferinfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+		framebufferinfo.pAttachments = attachments.data();
+		framebufferinfo.width = swapChainExtent.width;
+		framebufferinfo.height = swapChainExtent.height;
+		framebufferinfo.layers = 1;
+
+		VK_CHECK_RESULT(vkCreateFramebuffer(device, &framebufferinfo, nullptr, &swapChainFramebuffers[i]))
+	}
+}
+
+void VulkanBase::createSyncObjects()
+{
+	VkSemaphoreCreateInfo ci{};
+	ci.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+	VK_CHECK_RESULT(vkCreateSemaphore(device, &ci, nullptr, &imageAvailableSemaphore));
+	VK_CHECK_RESULT(vkCreateSemaphore(device, &ci, nullptr, &renderFinishedSemaphore));
+
+
+}
+
+void VulkanBase::createCommandBuffers()
+{
+	VkCommandBufferAllocateInfo ai{};
+	ai.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	ai.commandPool = commandPool;
+	ai.commandBufferCount = uint32_t(swapChainImageViews.size());
+	ai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	commandBuffers.resize(ai.commandBufferCount);
+	VK_CHECK_RESULT(vkAllocateCommandBuffers(device, &ai, commandBuffers.data()));
+
+	VkFenceCreateInfo fenceInfo = {};
+	fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+	inFences.resize(swapChainImageViews.size());
+	for (size_t i = 0; i < uint32_t(swapChainImageViews.size()); i++) {
+		VK_CHECK_RESULT(vkCreateFence(device, &fenceInfo, nullptr, &inFences[i]));
+	}
+}
+
 VulkanBase::SwapChainSupportDetails VulkanBase::querySwapChainSupport(VkPhysicalDevice device)
 {
 	SwapChainSupportDetails details;
@@ -283,23 +391,35 @@ void VulkanBase::mainLoop()
 		glfwPollEvents();
 		render();
 	}
-}
-
-void VulkanBase::render()
-{
-
-}
-
-void VulkanBase::cleanup()
-{
-
+	vkDeviceWaitIdle(device);
 }
 
 void VulkanBase::terminate()
 {
-	vkDestroyDevice(device, nullptr);
+	cleanup();
 
-	vkDestroySurfaceKHR(instance, surface, nullptr);
+	vkDestroyRenderPass(device, renderPass, nullptr);
+
+	for (auto& v : swapChainFramebuffers) { vkDestroyFramebuffer(device, v, nullptr); }
+	swapChainFramebuffers.clear();
+
+	vkFreeMemory(device, depthImageMemory, nullptr);
+	vkDestroyImage(device, depthImage, nullptr);
+	vkDestroyImageView(device, depthImageView, nullptr);
+
+	for (auto& v : swapChainImageViews) { vkDestroyImageView(device, v, nullptr); }
+	swapChainImages.clear();
+	vkDestroySwapchainKHR(device, swapChain, nullptr);
+
+	for (auto& v : inFences) { vkDestroyFence(device, v, nullptr); }
+	inFences.clear();
+	vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
+	vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
+
+	vkDestroyCommandPool(device, commandPool, nullptr);
+	
+	vkDestroyDevice(device, nullptr);
+		
 	vkDestroyInstance(instance, nullptr);
 
 	glfwDestroyWindow(window);
@@ -499,9 +619,7 @@ void VulkanBase::createSwapChain()
 	createInfo.oldSwapchain = VK_NULL_HANDLE;
 
 	// スワップチェーン作成
-	if (vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapChain) != VK_SUCCESS) {
-		throw std::runtime_error("failed to create swap chain!");
-	}
+	VK_CHECK_RESULT(vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapChain));
 
 	vkGetSwapchainImagesKHR(device, swapChain, &imageCount, nullptr);
 	swapChainImages.resize(imageCount);
@@ -516,6 +634,18 @@ void VulkanBase::createSwapChain()
 	for (size_t i = 0; i < swapChainImages.size(); i++) {
 		VK_CHECK_RESULT(VulkanTools::createImageView(device, swapChainImages[i], swapChainImageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1, &swapChainImageViews[i]));
 	}
+}
+
+void VulkanBase::createCommandPool()
+{
+	QueueFamilyIndices queueFamilyIndices = findQueueFamilies(physicalDevice);
+
+	VkCommandPoolCreateInfo poolInfo = {};
+	poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
+	poolInfo.flags = 0;	// Optional
+
+	VK_CHECK_RESULT(vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool));
 }
 
 VkSurfaceFormatKHR VulkanBase::chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats)
@@ -571,4 +701,108 @@ VkFormat VulkanBase::findDepthFormat()
 		VK_IMAGE_TILING_OPTIMAL,
 		VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
 	);
+}
+
+VkCommandBuffer VulkanBase::beginSingleTimeCommands()
+{
+	VkCommandBufferAllocateInfo allocInfo = {};
+	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocInfo.commandPool = commandPool;
+	allocInfo.commandBufferCount = 1;
+
+	VkCommandBuffer commandBuffer;
+	vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
+
+	VkCommandBufferBeginInfo beginInfo = {};
+	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+	vkBeginCommandBuffer(commandBuffer, &beginInfo);
+
+	return commandBuffer;
+}
+
+void VulkanBase::endSingleTimeCommands(VkCommandBuffer commandBuffer)
+{
+	vkEndCommandBuffer(commandBuffer);
+
+	VkSubmitInfo submitInfo = {};
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &commandBuffer;
+
+	vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+	vkQueueWaitIdle(graphicsQueue);
+
+	vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+}
+
+void VulkanBase::transitionImageLayout(
+	VkImage image,
+	VkFormat format,
+	VkImageLayout oldLayout,
+	VkImageLayout newLayout,
+	uint32_t mipLevels)
+{
+	VkCommandBuffer commandBuffer = beginSingleTimeCommands();
+	VkImageMemoryBarrier imb{};
+	imb.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	imb.oldLayout = oldLayout;
+	imb.newLayout = newLayout;
+	imb.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	imb.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	imb.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+	imb.image = image;
+	imb.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	imb.subresourceRange.baseMipLevel = 0;
+	imb.subresourceRange.levelCount = mipLevels;
+	imb.subresourceRange.baseArrayLayer = 0;
+	imb.subresourceRange.layerCount = 1;
+	imb.srcAccessMask = 0;
+	imb.dstAccessMask = 0;
+
+	VkPipelineStageFlags srcStage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+	VkPipelineStageFlags dstStage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+
+	switch (oldLayout)
+	{
+	case VK_IMAGE_LAYOUT_UNDEFINED:
+		imb.srcAccessMask = 0;
+		break;
+	case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+		imb.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		srcStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+		break;
+	}
+
+	switch (newLayout)
+	{
+	case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
+		imb.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+		dstStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+		break;
+	case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
+		imb.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		dstStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+		break;
+	case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
+		imb.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+		dstStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+		break;
+	}
+
+	vkCmdPipelineBarrier(
+		commandBuffer,
+		srcStage,
+		dstStage,
+		0,
+		0,  // memoryBarrierCount
+		nullptr,
+		0,  // bufferMemoryBarrierCount
+		nullptr,
+		1,  // imageMemoryBarrierCount
+		&imb);
+
+	endSingleTimeCommands(commandBuffer);
 }

@@ -26,21 +26,6 @@
 #include "../common/VulkanTools.h"
 #include "../common/VulkanDebug.h"
 
-#ifdef _DEBUG
-#define TRACE(x) std::cout << x << std::endl;
-#else
-#define TRACE(x)
-#endif // _DEBUG
-
-#define VK_CHECK_RESULT(f)				\
-{										\
-	VkResult res = (f);					\
-	if (res != VK_SUCCESS)				\
-	{									\
-		std::cout << "Fatal : VkResult is \"" << res << "\" in " << __FILE__ << " at line " << __LINE__ << std::endl; \
-		assert(res == VK_SUCCESS);		\
-	}									\
-}
 
 class VulkanBase
 {
@@ -107,6 +92,21 @@ protected:
 	VkFormat swapChainImageFormat;
 	VkExtent2D swapChainExtent;
 	VkRenderPass renderPass;
+	VkCommandPool commandPool;
+	std::vector<VkFramebuffer> swapChainFramebuffers;
+	std::vector<VkCommandBuffer> commandBuffers;
+
+	VkImage colorImage;
+	VkDeviceMemory colorImageMemory;
+	VkImageView colorImageView;
+
+	VkImage depthImage;
+	VkDeviceMemory depthImageMemory;
+	VkImageView depthImageView;
+
+	VkSemaphore imageAvailableSemaphore;
+	VkSemaphore renderFinishedSemaphore;
+	std::vector<VkFence> inFences;
 
 
 	// プロパティ
@@ -130,11 +130,18 @@ protected:
 	void selectPhysicalDevice();
 	void createLogicalDevice();
 	void createSwapChain();
+	void createCommandPool();
 	void createRenderPass();
+	void createColorBuffer();
+	void createDepthBuffer();
+	void createFramebuffer();
+	void createSyncObjects();
+	void createCommandBuffers();
 
+	virtual void prepare() {};
 	virtual void mainLoop();
-	virtual void render();
-	virtual void cleanup();
+	virtual void render() {};
+	virtual void cleanup() {};
 
 	void terminate();
 
@@ -168,4 +175,18 @@ protected:
 
 	// デプスフォーマットを検索する
 	VkFormat findDepthFormat();
+
+	// コマンドバッファの作成とレコード開始を行う
+	VkCommandBuffer beginSingleTimeCommands();
+
+	// コマンドバッファのレコード完了・サブミット・解放
+	void endSingleTimeCommands(VkCommandBuffer commandBuffer);
+
+	// イメージレイアウト遷移
+	void transitionImageLayout(
+		VkImage image,
+		VkFormat format,
+		VkImageLayout oldLayout,
+		VkImageLayout newLayout,
+		uint32_t mipLevels);
 };
