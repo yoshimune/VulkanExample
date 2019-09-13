@@ -32,7 +32,16 @@ namespace VulkanTools
 	VK_CHECK_RESULT(f)								\
 	return f;										\
 }
-
+	// バッファ作成
+	VkResult createBuffer(
+		VkPhysicalDevice physicalDevice,
+		VkDevice device,
+		VkBufferUsageFlags usageFlags,
+		VkMemoryPropertyFlags memoryPropertyFlags,
+		VkDeviceSize size,
+		VkBuffer* buffer,
+		VkDeviceMemory* memory,
+		void* data = nullptr);
 
 	// イメージ作成
 	VkResult createImage(

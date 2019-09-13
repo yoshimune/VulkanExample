@@ -1,5 +1,58 @@
 #include "VulkanTools.h"
 
+VkResult VulkanTools::createBuffer(
+	VkPhysicalDevice physicalDevice,
+	VkDevice device,
+	VkBufferUsageFlags usageFlags,
+	VkMemoryPropertyFlags memoryPropertyFlags,
+	VkDeviceSize size,
+	VkBuffer* buffer,
+	VkDeviceMemory* memory,
+	void* data = nullptr)
+{
+	// Create the buffer handle
+	VkBufferCreateInfo bufCreateInfo{};
+	bufCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	bufCreateInfo.usage = usageFlags;
+	bufCreateInfo.size = size;
+	bufCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	VK_CHECK_RESULT(vkCreateBuffer(device, &bufCreateInfo, nullptr, buffer));
+
+	// Create the memory backing up the buffer handle
+	VkMemoryRequirements memReqs;
+	VkMemoryAllocateInfo memAllocInfo{};
+	memAllocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	vkGetBufferMemoryRequirements(device, *buffer, &memReqs);
+	memAllocInfo.allocationSize = memReqs.size;
+
+	// Find a memory type index that fits the properties of the buffer
+	memAllocInfo.memoryTypeIndex = findMemoryType(physicalDevice, memReqs.memoryTypeBits, memoryPropertyFlags);
+	VK_CHECK_RESULT(vkAllocateMemory(device, &memAllocInfo, nullptr, memory));
+
+	// If a pointer to the buffer data has been passed, map the buffer and copy over the data
+	if (data != nullptr)
+	{
+		void* mapped;
+		VK_CHECK_RESULT(vkMapMemory(device, *memory, 0, size, 0, &mapped));
+		memcpy(mapped, data, size);
+
+		// If host coherency hasn't been requested, do a manual flush to make writes visible
+		if ((memoryPropertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) == 0)
+		{
+			VkMappedMemoryRange mappedMemoryRange{};
+			mappedMemoryRange.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+			mappedMemoryRange.memory = *memory;
+			mappedMemoryRange.offset = 0;
+			mappedMemoryRange.size = size;
+			vkFlushMappedMemoryRanges(device, 1, &mappedMemoryRange);
+		}
+		vkUnmapMemory(device, *memory);
+	}
+
+	// Attach the memory to the buffer object
+	VK_CHECK_RESULT_AND_RETURN(vkBindBufferMemory(device, *buffer, *memory, 0));
+}
+
 VkResult VulkanTools::createImage(
 	VkPhysicalDevice physicalDevice,
 	VkDevice device,
@@ -97,6 +150,7 @@ VkFormat VulkanTools::findSupportedFormat(
 
 uint32_t VulkanTools::findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties)
 {
+	// TODO ここで毎回プロパティを検索するのは非効率
 	VkPhysicalDeviceMemoryProperties memProperties;
 	vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
 
